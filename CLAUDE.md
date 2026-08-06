@@ -85,6 +85,22 @@ is only acceptable because cloud-init sets `ssh_pwauth: false` and
   the caddy user once ended up missing and the service dead at `217/USER`. Stage
   such files elsewhere and install them in `runcmd` after the package.
 
+## DNS
+
+In `dns.tf`, via `hcloud_zone` / `hcloud_zone_rrset` in the **official** provider —
+Hetzner folded the old dns.hetzner.com product and its separate API/token into the
+main console, so DNS uses the same provider, token, and state as everything else.
+The old `dns.hetzner.com/api/v1` endpoint 301s; `api.hetzner.cloud/v1/zones` is
+current. Ignore any guidance about a community DNS provider or a second token.
+
+Everything in `dns.tf` is inert while `var.domain == ""`. Setting it creates the
+zone plus apex/www A and AAAA records. Terraform **cannot** delegate the domain —
+take `terraform output nameservers` to the registrar by hand, and expect 24-48h.
+
+AAAA values carry a `1` suffix (`${...v6.ip_address}1`). An IPv6 Primary IP is a
+/64 and `ip_address` returns the network base, which is not a host and will not
+answer. The host is `…::1`.
+
 ## Patching
 
 `unattended-upgrades` applies security updates automatically. Stock Ubuntu config

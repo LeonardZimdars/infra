@@ -4,6 +4,19 @@ variable "hcloud_token" {
   sensitive   = true
 }
 
+variable "domain" {
+  description = <<-EOT
+    Apex domain, e.g. "leonardzimdars.de". Leave empty until you actually own
+    one — everything in dns.tf is inert while this is "".
+
+    Setting it creates the zone and A/AAAA records for apex and www. The zone's
+    nameservers must then be entered at your REGISTRAR, which Terraform cannot
+    do: `terraform output nameservers`. Delegation takes up to 24-48h.
+  EOT
+  type        = string
+  default     = "leonardzimdars.com"
+}
+
 variable "server_name" {
   description = "Name of the server in the Hetzner console. Also its hostname."
   type        = string

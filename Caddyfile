@@ -5,28 +5,36 @@
 # Do NOT edit /etc/caddy/Caddyfile on the server directly — the next deploy
 # overwrites it and the change is lost.
 
-# No domain yet, so serve by IP over plain HTTP. Caddy cannot issue a
-# certificate without a real hostname.
-:80 {
+leonardzimdars.com, www.leonardzimdars.com {
+	# One canonical host: www redirects to the apex, preserving path and query.
+	#
+	# Caddy issues ONE CERTIFICATE PER HOSTNAME regardless of how site blocks
+	# are grouped — leonardzimdars.com.crt and www.leonardzimdars.com.crt are
+	# separate, each with a single SAN. Grouping the names here does not merge
+	# them. Both renew automatically, so this costs nothing.
+	#
+	# www needs a certificate of its own precisely because it is redirected:
+	# an https:// request cannot be answered, even with a 301, until the TLS
+	# handshake completes.
+	@www host www.leonardzimdars.com
+	redir @www https://leonardzimdars.com{uri} permanent
+
 	root * /var/www/site
 	file_server
 	encode zstd gzip
+
+	# Caddy obtains and renews the Let's Encrypt certificate itself. There is
+	# no certbot and no renewal cron. Plain HTTP is redirected to HTTPS
+	# automatically — that redirect is not configured anywhere on purpose.
 }
 
-# --- Once you own a domain -------------------------------------------------
-# Replace the :80 block above with a named one. Caddy provisions a Let's
-# Encrypt certificate automatically on reload — no certbot, no renewal cron.
-#
-# yourname.com, www.yourname.com {
-# 	root * /var/www/site
-# 	file_server
-# 	encode zstd gzip
-# }
-#
 # --- Adding a project ------------------------------------------------------
-# Static, served from its own directory:
+# Each new site is a block here plus a DNS record in dns.tf. No server change,
+# no Terraform apply for the server itself.
 #
-# blog.yourname.com {
+# Static, from its own directory:
+#
+# blog.leonardzimdars.com {
 # 	root * /var/www/blog
 # 	file_server
 # 	encode zstd gzip
@@ -34,9 +42,11 @@
 #
 # Containerized, proxied to a local port:
 #
-# api.yourname.com {
+# api.leonardzimdars.com {
 # 	reverse_proxy localhost:3000
 # }
 #
-# Each new site is a block here plus a DNS record. No Terraform change.
+# NOTE: a hostname must already resolve to this server BEFORE it appears here.
+# Caddy requests a certificate on reload, and Let's Encrypt rate-limits failed
+# validations to 5 per hostname per hour.
 # ---------------------------------------------------------------------------
