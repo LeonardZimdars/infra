@@ -1,0 +1,42 @@
+# Source of truth for site routing. Version-controlled here, pushed to the
+# server with ./deploy.sh. cloud-init installs this same file on first boot,
+# so a rebuilt server comes up with current routing rather than a stale copy.
+#
+# Do NOT edit /etc/caddy/Caddyfile on the server directly — the next deploy
+# overwrites it and the change is lost.
+
+# No domain yet, so serve by IP over plain HTTP. Caddy cannot issue a
+# certificate without a real hostname.
+:80 {
+	root * /var/www/site
+	file_server
+	encode zstd gzip
+}
+
+# --- Once you own a domain -------------------------------------------------
+# Replace the :80 block above with a named one. Caddy provisions a Let's
+# Encrypt certificate automatically on reload — no certbot, no renewal cron.
+#
+# yourname.com, www.yourname.com {
+# 	root * /var/www/site
+# 	file_server
+# 	encode zstd gzip
+# }
+#
+# --- Adding a project ------------------------------------------------------
+# Static, served from its own directory:
+#
+# blog.yourname.com {
+# 	root * /var/www/blog
+# 	file_server
+# 	encode zstd gzip
+# }
+#
+# Containerized, proxied to a local port:
+#
+# api.yourname.com {
+# 	reverse_proxy localhost:3000
+# }
+#
+# Each new site is a block here plus a DNS record. No Terraform change.
+# ---------------------------------------------------------------------------

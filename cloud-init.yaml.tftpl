@@ -1,0 +1,76 @@
+#cloud-config
+# Runs ONCE, on first boot. Editing this file forces server replacement.
+hostname: ${hostname}
+
+users:
+  - name: ${admin_user}
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    ssh_authorized_keys:
+      - ${ssh_public_key}
+
+# Key-only auth. This is what makes an internet-facing port 22 acceptable.
+ssh_pwauth: false
+disable_root: true
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - debian-keyring
+  - debian-archive-keyring
+  - apt-transport-https
+  - fail2ban
+  - unattended-upgrades
+
+write_files:
+  # Injected verbatim from the repo's ./Caddyfile — that file is the source of
+  # truth. Ongoing changes go out via ./deploy.sh, not by editing this template
+  # (editing this template forces a full server rebuild).
+  - path: /etc/caddy/Caddyfile
+    content: |
+      ${indent(6, caddyfile)}
+
+  - path: /var/www/site/index.html
+    content: |
+      <!doctype html>
+      <meta charset="utf-8">
+      <title>Provisioned</title>
+      <style>
+        body { font-family: system-ui, sans-serif; max-width: 34rem;
+               margin: 20vh auto; padding: 0 1.5rem; line-height: 1.6; }
+        code { background: #eee; padding: .15em .4em; border-radius: 3px; }
+      </style>
+      <h1>Server is up.</h1>
+      <p>Caddy is serving this from <code>/var/www/site</code>.
+         Replace it with your real site.</p>
+
+  # Security patches apply themselves; nothing else auto-upgrades.
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+runcmd:
+  # --- Caddy (official Cloudsmith repo) ---
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' -o /etc/apt/sources.list.d/caddy-stable.list
+
+  # --- Docker (official repo) — for future containerized projects ---
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+
+  - apt-get update
+  - apt-get install -y caddy docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  - chown -R caddy:caddy /var/www/site
+  - systemctl enable --now caddy docker fail2ban
+  - systemctl restart caddy
+
+final_message: "Bootstrap finished after $UPTIME seconds."

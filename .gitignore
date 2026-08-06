@@ -1,0 +1,33 @@
+# Secrets — never commit
+*.tfvars
+*.tfvars.json
+.tfvars
+*.auto.tfvars
+!example.tfvars
+
+# State — contains provider credentials in plaintext
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+
+# Provider plugins and module cache
+.terraform/
+.terraform.lock.hcl.bak
+
+# Plan output — can contain secrets
+*.tfplan
+*.plan
+plan.out
+tf.plan
+
+# Crash logs
+crash.log
+crash.*.log
+
+# SSH keys, if any land here by accident
+*.pem
+id_rsa*
+id_ed25519*
+
+# macOS
+.DS_Store
