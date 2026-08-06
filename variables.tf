@@ -12,12 +12,14 @@ variable "server_name" {
 
 variable "server_type" {
   description = <<-EOT
-    Hetzner server type. cx22 = 2 vCPU Intel / 4 GB (x86, safest default).
-    cax11 = 2 vCPU Ampere / 4 GB (ARM, same price) — only if every container
-    image you plan to run publishes an arm64 build.
+    cax11 = 2 vCPU Ampere / 4 GB (ARM) — same price as cx22, better performance
+    per euro. This is an ARM machine: container images must publish arm64, which
+    essentially all mainstream ones do. If you ever hit an x86-only binary,
+    cx22 (2 vCPU Intel / 4 GB) is the drop-in replacement — but changing this
+    replaces the server.
   EOT
   type        = string
-  default     = "cx22"
+  default     = "cax11"
 }
 
 variable "location" {
