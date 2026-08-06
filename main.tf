@@ -91,3 +91,16 @@ resource "hcloud_server" "web" {
     managed = "terraform"
   }
 }
+
+# The Primary IP survives rebuilds but the server's SSH host keys do not, so
+# every recreation makes ssh refuse to connect with REMOTE HOST IDENTIFICATION
+# HAS CHANGED. Drop the stale entry automatically whenever the server is
+# replaced. Local-only convenience: it touches nothing but this machine's
+# known_hosts, and failure is ignored so a fresh checkout does not break.
+resource "terraform_data" "clear_known_hosts" {
+  triggers_replace = hcloud_server.web.id
+
+  provisioner "local-exec" {
+    command = "ssh-keygen -R ${hcloud_primary_ip.v4.ip_address} >/dev/null 2>&1 || true"
+  }
+}

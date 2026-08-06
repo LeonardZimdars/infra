@@ -61,6 +61,31 @@ write_files:
       APT::Periodic::Update-Package-Lists "1";
       APT::Periodic::Unattended-Upgrade "1";
 
+  # Numbered above 50unattended-upgrades so it wins. APT list syntax APPENDS,
+  # so the Ubuntu security origins from the stock file are preserved and these
+  # are added to them — do not restate the Ubuntu entries here.
+  - path: /etc/apt/apt.conf.d/52unattended-upgrades-local
+    content: |
+      // Stock config covers Ubuntu origins only, which leaves the two
+      // internet-facing third-party packages unpatched forever.
+      // Strings come from: apt-cache policy | grep -oE 'o=[^,]+,a=[^,]+'
+      Unattended-Upgrade::Allowed-Origins {
+          "cloudsmith/caddy/stable:any-version";
+          "Docker:$${distro_codename}";
+      };
+
+      // Kernel and libc updates need a reboot to take effect. Without this the
+      // box silently accumulates pending reboots and keeps running the old,
+      // vulnerable kernel. ~30s of downtime at 04:00 beats that trade for a
+      // static site — reconsider once stateful services live here.
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-WithUsers "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "04:00";
+
+      // Keep /boot from filling up with superseded kernels.
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+      Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
 runcmd:
   # --- Caddy (official Cloudsmith repo) ---
   - curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
@@ -84,3 +109,13 @@ runcmd:
   - systemctl restart caddy
 
 final_message: "Bootstrap finished after $UPTIME seconds."
+
+# package_upgrade installs a newer kernel than the base image ships, so a fresh
+# build otherwise sits on the OLD kernel until unattended-upgrades reboots it at
+# 04:00 — up to a day on an unpatched kernel every rebuild. Reboot here instead,
+# but only when something actually requires it.
+power_state:
+  mode: reboot
+  message: Rebooting to activate newly installed kernel
+  condition: test -f /var/run/reboot-required
+  timeout: 30

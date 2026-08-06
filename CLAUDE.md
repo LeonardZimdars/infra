@@ -72,6 +72,33 @@ is only acceptable because cloud-init sets `ssh_pwauth: false` and
   version-controlled. Never put a real token in it.
 - `.terraform.lock.hcl` is committed intentionally.
 - Hetzner blocks outbound port 25 on new accounts. Do not plan on self-hosted mail.
+- A server type can be `supported` at a location but not `available`. Apply then
+  fails with `resource_unavailable`. Check real capacity before changing
+  `server_type` or `location`:
+  `curl -H "Authorization: Bearer $TOKEN" https://api.hetzner.cloud/v1/datacenters`
+- Rebuilding regenerates SSH host keys while the Primary IP stays the same, so
+  SSH reports `REMOTE HOST IDENTIFICATION HAS CHANGED` and refuses to connect.
+  Expected, not an attack. Clear it with `ssh-keygen -R <ip>`. Anything holding a
+  pinned `known_hosts` entry (e.g. a CI deploy job) must be updated after a rebuild.
+- Never pre-create a path in `write_files` that a package ships as a conffile.
+  dpkg prompts, finds no stdin, and aborts configuring the package — which is how
+  the caddy user once ended up missing and the service dead at `217/USER`. Stage
+  such files elsewhere and install them in `runcmd` after the package.
+
+## Patching
+
+`unattended-upgrades` applies security updates automatically. Stock Ubuntu config
+covers Ubuntu origins only, so `52unattended-upgrades-local` (written by
+cloud-init) adds the Caddy and Docker repos — without it the two internet-facing
+packages are never patched. APT list syntax appends, so that file must not
+restate the Ubuntu origins.
+
+**The server reboots itself at 04:00 UTC when a kernel or libc update requires
+it.** That is deliberate: auto-reboot defaults to off, which silently leaves the
+box on an unpatched kernel indefinitely. Revisit if stateful services land here.
+
+Docker *images* are outside all of this — container contents need their own
+update path.
 
 ## Adding a site (no Terraform involved)
 
