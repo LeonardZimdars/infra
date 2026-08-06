@@ -31,7 +31,13 @@ write_files:
   # Injected verbatim from the repo's ./Caddyfile — that file is the source of
   # truth. Ongoing changes go out via ./deploy.sh, not by editing this template
   # (editing this template forces a full server rebuild).
-  - path: /etc/caddy/Caddyfile
+  #
+  # STAGED HERE, NOT AT /etc/caddy/Caddyfile. write_files runs before runcmd, so
+  # pre-creating that path makes dpkg see an unowned conffile during install,
+  # prompt interactively, fail on absent stdin, and abort configuring the
+  # package — leaving no caddy user and a dead service. runcmd installs it into
+  # place after the package is configured.
+  - path: /opt/bootstrap/Caddyfile
     content: |
       ${indent(6, caddyfile)}
 
@@ -66,9 +72,13 @@ runcmd:
   - chmod a+r /etc/apt/keyrings/docker.asc
   - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
 
-  - apt-get update
-  - apt-get install -y caddy docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  # noninteractive + force-confold so no package can ever block on a conffile
+  # prompt the way caddy did. A prompt here aborts the whole bootstrap.
+  - DEBIAN_FRONTEND=noninteractive apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::=--force-confold caddy docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
+  # Only now that the package is configured does the caddy user exist.
+  - install -o root -g root -m 644 /opt/bootstrap/Caddyfile /etc/caddy/Caddyfile
   - chown -R caddy:caddy /var/www/site
   - systemctl enable --now caddy docker fail2ban
   - systemctl restart caddy

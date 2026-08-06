@@ -12,14 +12,22 @@ variable "server_name" {
 
 variable "server_type" {
   description = <<-EOT
-    cax11 = 2 vCPU Ampere / 4 GB (ARM) — same price as cx22, better performance
-    per euro. This is an ARM machine: container images must publish arm64, which
-    essentially all mainstream ones do. If you ever hit an x86-only binary,
-    cx22 (2 vCPU Intel / 4 GB) is the drop-in replacement — but changing this
-    replaces the server.
+    cx23 = 2 vCPU x86 / 4 GB / 40 GB — cheapest type actually available at fsn1.
+
+    Note the generation shift: cx22 and cpx11 are retired names, replaced by
+    cx23 and cpx12. ARM (cax11) is preferable on price/performance but was out
+    of stock in every datacenter as of Aug 2026 — a server type being
+    "supported" at a location does not mean it is "available".
+
+    Check before changing this, since a bad value fails at apply time with
+    `resource_unavailable`:
+      curl -H "Authorization: Bearer $HCLOUD_TOKEN" \
+        https://api.hetzner.cloud/v1/datacenters
+
+    Changing this replaces the server.
   EOT
   type        = string
-  default     = "cax11"
+  default     = "cx23"
 }
 
 variable "location" {
