@@ -4,19 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Terraform for a single Hetzner Cloud VPS that hosts personal websites. One server
-fronted by Caddy serves many sites by hostname — adding a site is a Caddyfile block
-plus a DNS record, **not** a Terraform change. Do not add a server per site.
+Terraform for a single Hetzner Cloud VPS hosting personal websites. One server
+fronted by Caddy serves many sites by hostname. **Do not add a server per site** —
+capacity is not the constraint and never will be at this scale.
+
+Live: `https://leonardzimdars.com` (apex canonical, `www` 301s to it).
 
 ## Commands
 
 ```sh
 terraform init                  # after cloning or changing provider versions
 terraform fmt                   # run before committing
-terraform validate              # no API calls; catches schema errors
+terraform validate              # no API calls; catches schema and type errors
 terraform plan                  # hits the Hetzner API; needs a valid token
 terraform apply
-terraform output dns_records    # the A/AAAA records to create
+./deploy.sh                     # push ./Caddyfile to the server and reload
+terraform output nameservers    # values to enter at the registrar
 ssh "$(terraform output -raw ssh)"
 ```
 
@@ -43,9 +46,11 @@ Terraform resources (they are Caddyfile blocks), so this stays at one workspace.
 
 ## Architecture
 
-**Terraform's boundary stops at the machine.** It owns the SSH key, firewall,
-Primary IPs, and server. It does not own Caddy config, site content, or TLS.
-Those live on the server. Do not add deployment logic here.
+**Terraform owns infrastructure, not what runs on the box.** It owns the SSH key,
+firewall, Primary IPs, server, and — since DNS moved in-provider — the zone,
+records, and rDNS. It does **not** own Caddy config, site content, or TLS. Those
+live on the server and are pushed with `deploy.sh`. Do not add deployment logic
+to Terraform.
 
 **Primary IPs are separate resources on purpose** (`main.tf`). If the server
 allocated its own address, any rebuild would issue a new IP and silently break
@@ -77,9 +82,25 @@ is only acceptable because cloud-init sets `ssh_pwauth: false` and
   `server_type` or `location`:
   `curl -H "Authorization: Bearer $TOKEN" https://api.hetzner.cloud/v1/datacenters`
 - Rebuilding regenerates SSH host keys while the Primary IP stays the same, so
-  SSH reports `REMOTE HOST IDENTIFICATION HAS CHANGED` and refuses to connect.
-  Expected, not an attack. Clear it with `ssh-keygen -R <ip>`. Anything holding a
-  pinned `known_hosts` entry (e.g. a CI deploy job) must be updated after a rebuild.
+  SSH reports `REMOTE HOST IDENTIFICATION HAS CHANGED`. Expected, not an attack.
+  `terraform_data.clear_known_hosts` runs `ssh-keygen -R` locally on every server
+  replacement, so this is handled — but only on the machine running Terraform.
+  Anything else holding a pinned host key (a CI deploy job's `KNOWN_HOSTS`
+  secret) still needs updating by hand, and fails with an identical-looking error.
+  Do NOT "fix" this by pinning host keys via cloud-init's `ssh_keys` module: that
+  puts a private host key into user_data, readable from the metadata service.
+- `hcloud_zone.authoritative_nameservers` is a single nested OBJECT, not a list —
+  the hostnames are in its `.assigned` field. Reading the object directly is a
+  type error. Provider attribute shapes are worth checking rather than guessing:
+  `terraform providers schema -json` works offline and is authoritative.
+- **Caddy issues one certificate per hostname**, regardless of how site blocks
+  group names. `leonardzimdars.com.crt` and `www.leonardzimdars.com.crt` are
+  separate, each with a single SAN. Grouping names in one block does not merge
+  them into a multi-SAN cert. Harmless — both renew automatically.
+- `cloud-init.yaml.tftpl` ends with `power_state: reboot`, conditional on
+  `/var/run/reboot-required`. Without it every fresh build sits on the base
+  image's older kernel until the 04:00 job reboots it, since `package_upgrade`
+  installs a newer one during bootstrap.
 - Never pre-create a path in `write_files` that a package ships as a conffile.
   dpkg prompts, finds no stdin, and aborts configuring the package — which is how
   the caddy user once ended up missing and the service dead at `217/USER`. Stage
@@ -93,9 +114,16 @@ main console, so DNS uses the same provider, token, and state as everything else
 The old `dns.hetzner.com/api/v1` endpoint 301s; `api.hetzner.cloud/v1/zones` is
 current. Ignore any guidance about a community DNS provider or a second token.
 
-Everything in `dns.tf` is inert while `var.domain == ""`. Setting it creates the
-zone plus apex/www A and AAAA records. Terraform **cannot** delegate the domain —
-take `terraform output nameservers` to the registrar by hand, and expect 24-48h.
+`var.domain` is `leonardzimdars.com`, registered at Porkbun and delegated to
+Hetzner's nameservers. Everything in `dns.tf` is inert if that is set back to `""`.
+
+Terraform **cannot** delegate a domain — `terraform output nameservers` has to be
+entered at the registrar by hand, and propagation takes minutes to 48h. Stale
+caches during a delegation change are normal; check the authoritative servers
+(`dig @hydrogen.ns.hetzner.com <name>`) rather than a local resolver.
+
+`local.record_ttl` is 300, chosen for fast iteration during setup. Raise it to
+3600 now that records are stable.
 
 AAAA values carry a `1` suffix (`${...v6.ip_address}1`). An IPv6 Primary IP is a
 /64 and `ip_address` returns the network base, which is not a host and will not
@@ -116,15 +144,22 @@ box on an unpatched kernel indefinitely. Revisit if stateful services land here.
 Docker *images* are outside all of this — container contents need their own
 update path.
 
-## Adding a site (no Terraform involved)
+## Adding a site
 
-1. Add a block to `./Caddyfile` in this repo — `root`+`file_server` for static,
-   `reverse_proxy localhost:PORT` for a container.
-2. `./deploy.sh`
-3. Point an A/AAAA record at the Primary IPs.
+Never a new server. Two files change:
 
-Caddy provisions Let's Encrypt certificates automatically once a block names a
-real hostname. There is no certbot and no renewal cron.
+1. **`dns.tf`** — add the subdomain to `local.web_records`, then `terraform apply`.
+2. **`./Caddyfile`** — add a site block: `root`+`file_server` for static,
+   `reverse_proxy localhost:PORT` for a container. Then `./deploy.sh`.
+
+**Order matters.** DNS must resolve to this server *before* the hostname appears
+in the Caddyfile. Caddy requests a certificate the moment it reloads, using an
+HTTP-01 challenge that requires working DNS, and Let's Encrypt rate-limits failed
+validations to **5 per hostname per hour**. Confirm with `dig +short <name> A`
+before deploying. This is the one mistake here that costs real time.
+
+Caddy provisions and renews Let's Encrypt certificates automatically. There is no
+certbot and no renewal cron.
 
 **`./Caddyfile` in this repo is the source of truth.** `deploy.sh` rsyncs it,
 validates it on the server, then installs and reloads — so a syntax error fails

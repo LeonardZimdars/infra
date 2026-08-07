@@ -23,6 +23,23 @@ leonardzimdars.com, www.leonardzimdars.com {
 	file_server
 	encode zstd gzip
 
+	# Astro fingerprints everything under /_astro/ with a content hash, so those
+	# files are immutable by construction and can be cached forever. The HTML
+	# that references them is deliberately NOT cached here: it must be refetched
+	# for a deploy to be visible at all.
+	header /_astro/* Cache-Control "public, max-age=31536000, immutable"
+
+	header {
+		# Only meaningful over HTTPS, which is the only way this is served.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		# The site ships no JavaScript and loads nothing cross-origin, so a
+		# restrictive policy costs nothing. Revisit before adding analytics,
+		# an embed, or a web font.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+	}
+
 	# Caddy obtains and renews the Let's Encrypt certificate itself. There is
 	# no certbot and no renewal cron. Plain HTTP is redirected to HTTPS
 	# automatically — that redirect is not configured anywhere on purpose.
