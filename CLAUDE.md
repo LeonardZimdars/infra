@@ -10,6 +10,12 @@ capacity is not the constraint and never will be at this scale.
 
 Live: `https://leonardzimdars.com` (apex canonical, `www` 301s to it).
 
+**Site content is not in this repo.** `../cv-web` is a separate Astro project with
+its own git history and its own `deploy.sh`, which builds and rsyncs into
+`/var/www/site`. This repo stops at the machine and the routing in front of it.
+The two deploy paths are deliberately independent — a content change needs no
+Caddy reload, a routing change needs no rebuild.
+
 ## Commands
 
 ```sh
@@ -57,15 +63,47 @@ allocated its own address, any rebuild would issue a new IP and silently break
 every DNS record. `auto_delete = false` makes them outlive the server, so the
 addresses in `terraform output` are stable and safe to hardcode in DNS.
 
-**`cloud-init.yaml.tftpl` runs once, on first boot only.** Editing it forces
-Terraform to destroy and recreate the server — check `plan` output for
-`forces replacement` before applying. It is bootstrap, not config management.
-To change a running server, SSH in, or move to Ansible if this grows.
+**`cloud-init.yaml.tftpl` runs once, on first boot only.** It is bootstrap, not
+config management. A running server is changed via the deploy scripts or by SSH.
+
+**`hcloud_server.web` carries `lifecycle { ignore_changes = [user_data] }`.** This
+is load-bearing, not tidying. The template interpolates `./Caddyfile`, so without
+it every routing edit would change the `user_data` hash and force a rebuild —
+destroying the machine, and `/var/www/site` with it, because a header was added
+to a web server config. Hetzner only reads `user_data` at first boot anyway, so a
+diff there could never do anything *except* rebuild.
+
+Consequence: **editing `cloud-init.yaml.tftpl` no longer shows up in `plan`.**
+Bootstrap changes are silently deferred until the next rebuild. That is the
+intended trade, but it means `plan` is not a reliable signal for this one file.
 
 **The firewall default-denies inbound**; only 22/80/443-tcp, 443-udp (HTTP/3),
 and ICMP are open. Outbound is unrestricted. Port 22 is internet-facing, which
 is only acceptable because cloud-init sets `ssh_pwauth: false` and
 `disable_root: true` — do not weaken either without narrowing `ssh_allowed_ips`.
+
+## Rebuilding the server
+
+Because `user_data` is ignored, a rebuild never happens on its own — it must be
+asked for explicitly:
+
+```sh
+terraform apply -replace=hcloud_server.web
+```
+
+A rebuild picks up the **current** `./Caddyfile` (templatefile evaluates at create
+time, so nothing is stale), but it starts from an empty `/var/www/site`. Three
+things follow, in order:
+
+1. `../cv-web/deploy.sh` — republish site content, otherwise the site is the
+   cloud-init placeholder page.
+2. The one-time chown, since cloud-init leaves `/var/www/site` owned by
+   `caddy:caddy` and the admin user cannot rsync into it:
+   `sudo chown -R $USER:caddy /var/www/site && sudo chmod -R g+rX /var/www/site`
+3. `./deploy.sh` only if the Caddyfile changed since — cloud-init already
+   installed the current one.
+
+Primary IPs and DNS survive untouched. Host keys do not — see the gotcha below.
 
 ## Gotchas
 
@@ -125,6 +163,21 @@ caches during a delegation change are normal; check the authoritative servers
 `local.record_ttl` is 300, chosen for fast iteration during setup. Raise it to
 3600 now that records are stable.
 
+**An RRset owns every record under a `(name, type)` pair.** This is the sharp edge
+in `dns.tf`. Each entry in `local.web_records` carries a `values` **list**, not a
+single value, because anything sharing a name and type must live in one entry.
+Declaring a second `hcloud_zone_rrset` for `"@"`/`TXT` does not add a record — the
+two fight, and the last apply silently wins. So the apex TXT entry is the single
+home for every apex TXT: domain verifications now, SPF/DKIM/DMARC if mail is ever
+set up.
+
+**TXT values must be double-quoted or the API rejects them** with
+`422 invalid_input — "TXT records must be fully escaped with double quotes"`.
+`dns.tf` adds the quotes centrally in the `records` comprehension rather than in
+each declaration, so it cannot be forgotten. Values already starting with `"` pass
+through untouched, which is what lets a >255-character DKIM key be supplied
+pre-split into several quoted strings.
+
 AAAA values carry a `1` suffix (`${...v6.ip_address}1`). An IPv6 Primary IP is a
 /64 and `ip_address` returns the network base, which is not a host and will not
 answer. The host is `…::1`.
@@ -169,3 +222,17 @@ rather than pinned to whatever routing existed when the template was written.
 
 Never hand-edit `/etc/caddy/Caddyfile` on the server: the next `deploy.sh`
 overwrites it, and the change exists nowhere else.
+
+**The apex block carries a Content-Security-Policy**, alongside HSTS,
+`X-Content-Type-Options`, and `Referrer-Policy`. The CSP is restrictive —
+`default-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`, and only
+`style-src` permits `'unsafe-inline'`. That is a coupling between this repo and
+`../cv-web`: an inline `<script>`, a CDN font, an external analytics snippet, or
+an embedded iframe added there will be blocked by a policy defined *here*, and
+the failure appears only in the browser console — nothing in the build or deploy
+reports it. Check the console after any cv-web change that adds a third-party
+resource.
+
+The Astro-specific rules (`Cache-Control: immutable` on `/_astro/*`, the
+`site.webmanifest` content type) assume cv-web's build layout. They are harmless
+if it changes, but they stop being useful.
