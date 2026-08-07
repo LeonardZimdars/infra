@@ -9,9 +9,10 @@
 locals {
   dns_enabled = var.domain != ""
 
-  # Short TTL while setting up, so mistakes are cheap to correct. Raise to 3600
-  # once the records are settled.
-  record_ttl = 300
+  # Records are settled, so an hour. Drop back to 300 before a planned change
+  # (server move, IP change) so the cutover is not gated on a stale hour-long
+  # cache — lower it, wait out the old TTL, then make the change.
+  record_ttl = 3600
 
   # Both apex and www, on v4 and v6. Note the "1" suffix on the v6 value: the
   # Primary IP is a /64 network and its base address is not a host.

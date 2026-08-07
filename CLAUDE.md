@@ -160,8 +160,9 @@ entered at the registrar by hand, and propagation takes minutes to 48h. Stale
 caches during a delegation change are normal; check the authoritative servers
 (`dig @hydrogen.ns.hetzner.com <name>`) rather than a local resolver.
 
-`local.record_ttl` is 300, chosen for fast iteration during setup. Raise it to
-3600 now that records are stable.
+`local.record_ttl` is 3600. Before a planned cutover (server move, IP change),
+lower it and wait out the old TTL *first*, then make the change — otherwise
+resolvers serve the stale address for up to an hour after it stops working.
 
 **An RRset owns every record under a `(name, type)` pair.** This is the sharp edge
 in `dns.tf`. Each entry in `local.web_records` carries a `values` **list**, not a
