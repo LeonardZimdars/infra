@@ -77,8 +77,12 @@ resource "hcloud_server" "web" {
     ipv6         = hcloud_primary_ip.v6.id
   }
 
-  # NOTE: editing this template forces the server to be recreated. It runs once,
-  # on first boot only. Treat it as bootstrap, not as ongoing config management.
+  # Bootstrap only. This runs once, on first boot, and is not config management.
+  #
+  # It interpolates ./Caddyfile, which means every routing edit changes this
+  # hash. Without the lifecycle block below, adding a header to the Caddyfile
+  # would rebuild the machine and wipe /var/www/site — a website change
+  # destroying the web server, which is absurd.
   user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
     admin_user     = var.admin_user
     ssh_public_key = trimspace(file(pathexpand(var.ssh_public_key_path)))
@@ -89,6 +93,21 @@ resource "hcloud_server" "web" {
   labels = {
     role    = "web"
     managed = "terraform"
+  }
+
+  lifecycle {
+    # user_data cannot be changed on a running server anyway — Hetzner only
+    # reads it at first boot — so a diff here can only ever mean "destroy and
+    # rebuild". The live Caddy config is owned by ./deploy.sh, and site content
+    # by cv-web/deploy.sh; neither needs a new machine.
+    #
+    # A rebuild still gets the CURRENT Caddyfile, because templatefile is
+    # evaluated at create time. Nothing goes stale.
+    #
+    # To deliberately rebuild (e.g. after editing cloud-init.yaml.tftpl):
+    #   terraform apply -replace=hcloud_server.web
+    # then re-run BOTH deploy scripts and redo the /var/www/site chown.
+    ignore_changes = [user_data]
   }
 }
 
