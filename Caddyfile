@@ -29,6 +29,12 @@ leonardzimdars.com, www.leonardzimdars.com {
 	# for a deploy to be visible at all.
 	header /_astro/* Cache-Control "public, max-age=31536000, immutable"
 
+	# Caddy has no MIME entry for .webmanifest, so it sends no Content-Type at
+	# all. Normally a browser would sniff; `X-Content-Type-Options: nosniff`
+	# below forbids that, so without this the manifest is fetched and then
+	# discarded.
+	header /site.webmanifest Content-Type "application/manifest+json"
+
 	header {
 		# Only meaningful over HTTPS, which is the only way this is served.
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
