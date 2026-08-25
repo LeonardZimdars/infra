@@ -51,6 +51,33 @@ leonardzimdars.com, www.leonardzimdars.com {
 	# automatically — that redirect is not configured anywhere on purpose.
 }
 
+games.leonardzimdars.com {
+	# ../games — a single container listening on loopback only. Nothing else
+	# reaches it: the container publishes to 127.0.0.1, so this proxy is the
+	# only route in even if the cloud firewall were opened by mistake.
+	reverse_proxy localhost:8080
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+
+		# The app also ships a noindex meta tag and a robots.txt. Three layers
+		# because only one of them lives in this repo, and the whole point of
+		# the shared password is that this stays off search engines.
+		X-Robots-Tag "noindex, nofollow"
+
+		# NOTE for anyone editing ../games: no 'unsafe-inline'. The app's CSS
+		# and JS are external files from this origin, so an inline <script> or
+		# a style="" attribute added over there is blocked by a policy defined
+		# HERE. Neither its build nor its deploy reports it — it shows up only
+		# in the browser console. This is why player colours in that app are
+		# CSS classes rather than the hex values sitting in its database.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+	}
+}
+
 # --- Adding a project ------------------------------------------------------
 # Each new site is a block here plus a DNS record in dns.tf. No server change,
 # no Terraform apply for the server itself.

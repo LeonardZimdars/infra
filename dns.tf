@@ -27,6 +27,14 @@ locals {
     "www-a"     = { name = "www", type = "A", values = [hcloud_primary_ip.v4.ip_address] },
     "www-aaaa"  = { name = "www", type = "AAAA", values = ["${hcloud_primary_ip.v6.ip_address}1"] },
 
+    # ../games — holiday games tracker, a container on :8080 behind Caddy.
+    # Apply this and confirm `dig +short games.<domain> A` answers BEFORE adding
+    # the site block to ./Caddyfile: Caddy asks Let's Encrypt for a certificate
+    # the moment the hostname appears in its config, and failed validations are
+    # rate-limited to 5 per hostname per hour.
+    "games-a"    = { name = "games", type = "A", values = [hcloud_primary_ip.v4.ip_address] },
+    "games-aaaa" = { name = "games", type = "AAAA", values = ["${hcloud_primary_ip.v6.ip_address}1"] },
+
     # Apex TXT. Every apex TXT record lives in this one list: domain
     # verifications, and SPF when mail is set up. Adding a separate rrset for
     # "@"/TXT would not coexist with this one — the last apply would win and
