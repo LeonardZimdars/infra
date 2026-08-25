@@ -35,6 +35,12 @@ locals {
     "games-a"    = { name = "games", type = "A", values = [hcloud_primary_ip.v4.ip_address] },
     "games-aaaa" = { name = "games", type = "AAAA", values = ["${hcloud_primary_ip.v6.ip_address}1"] },
 
+    # ../drinks — holiday BAC tracker, a container on :8081 behind Caddy. Same
+    # rule as games: apply this and confirm the AUTHORITATIVE nameserver answers
+    # BEFORE adding the site block to ./Caddyfile.
+    "drinks-a"    = { name = "drinks", type = "A", values = [hcloud_primary_ip.v4.ip_address] },
+    "drinks-aaaa" = { name = "drinks", type = "AAAA", values = ["${hcloud_primary_ip.v6.ip_address}1"] },
+
     # Apex TXT. Every apex TXT record lives in this one list: domain
     # verifications, and SPF when mail is set up. Adding a separate rrset for
     # "@"/TXT would not coexist with this one — the last apply would win and

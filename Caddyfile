@@ -78,6 +78,39 @@ games.leonardzimdars.com {
 	}
 }
 
+drinks.leonardzimdars.com {
+	# ../drinks — holiday BAC tracker, a single container listening on loopback
+	# only. Port 8081; ../games has 8080. Nothing enforces that difference: two
+	# apps claiming one port means one container fails to bind and restart-loops
+	# while the other keeps serving perfectly, so the symptom reads as "the new
+	# app is down" rather than "there is a conflict". The allocation is recorded
+	# in ../CLAUDE.md — read it before adding a fourth app.
+	reverse_proxy localhost:8081
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Robots-Tag "noindex, nofollow"
+
+		# NOTE for anyone editing ../drinks: no 'unsafe-inline'. Same policy as
+		# games, and it constrains that app harder because it draws charts. Its
+		# SVG is INLINE in the HTML: the geometry lives in `d`, `x1` and `cy`
+		# attributes, which are content and pass this policy, while every stroke
+		# colour is a CSS class in its app.css. It cannot use <img src="chart.svg">
+		# — a referenced SVG is a separate document that the page's stylesheet
+		# cannot reach at all, which would force the whole palette into
+		# presentation attributes and fork it.
+		#
+		# That app also emits this same header itself, so a violation shows up in
+		# local development instead of only here. If the two strings drift the
+		# browser enforces their intersection, so drift makes the policy stricter
+		# and never looser — but keep them identical anyway.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+	}
+}
+
 # --- Adding a project ------------------------------------------------------
 # Each new site is a block here plus a DNS record in dns.tf. No server change,
 # no Terraform apply for the server itself.
