@@ -111,6 +111,44 @@ drinks.leonardzimdars.com {
 	}
 }
 
+classics.leonardzimdars.com {
+	# ../classics — book club ranking Penguin's 100 classics, a single container
+	# listening on loopback only. Port 8082; ../games has 8080 and ../drinks has
+	# 8081. Nothing enforces that difference: two apps claiming one port means
+	# one container fails to bind and restart-loops while the other keeps serving
+	# perfectly, so the symptom reads as "the new app is down" rather than "there
+	# is a conflict". The allocation is recorded in ../CLAUDE.md.
+	reverse_proxy localhost:8082
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Robots-Tag "noindex, nofollow"
+
+		# NOTE for anyone editing ../classics: no 'unsafe-inline'. Same policy as
+		# games and drinks, and it constrains that app in two ways neither of the
+		# others hits.
+		#
+		# It draws charts, so its SVG is INLINE in the HTML — geometry in `d` and
+		# `x1`, which is content and passes, while every stroke colour is a CSS
+		# class in its app.css.
+		#
+		# It is also the only app here that serves images: a hundred book covers.
+		# `img-src 'self' data:` is why those are downloaded into its repository
+		# and served from this origin rather than hotlinked from Open Library,
+		# which would be blocked. The same rule rules out the obvious fallback
+		# for a missing cover — an onerror attribute is an inline handler — so
+		# the app decides at boot which files exist and renders a typographic
+		# tile for the rest.
+		#
+		# That app emits this same header itself, so a violation shows up in
+		# local development instead of only here.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+	}
+}
+
 # --- Adding a project ------------------------------------------------------
 # Each new site is a block here plus a DNS record in dns.tf. No server change,
 # no Terraform apply for the server itself.
